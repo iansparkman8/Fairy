@@ -1,0 +1,89 @@
+name: Build FairyOS APK From Uploaded Release ZIP
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "FairyOS-Unified-v6_1-RELEASE.zip"
+      - ".github/workflows/build-release-zip.yml"
+
+jobs:
+  build-debug-apk:
+    name: Build Spark Baby Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Show repo files
+        run: |
+          pwd
+          ls -la
+
+      - name: Unzip FairyOS release package
+        run: |
+          ZIP_NAME="FairyOS-Unified-v6_1-RELEASE.zip"
+          PROJECT_DIR="FairyOS"
+
+          if [ ! -f "$ZIP_NAME" ]; then
+            echo "Could not find $ZIP_NAME"
+            echo "Files in repo:"
+            ls -la
+            exit 1
+          fi
+
+          rm -rf "$PROJECT_DIR"
+          unzip -q "$ZIP_NAME"
+
+          echo "Unzipped package:"
+          ls -la
+
+          echo "FairyOS folder:"
+          ls -la "$PROJECT_DIR"
+
+          echo "Android folder:"
+          ls -la "$PROJECT_DIR/android"
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+
+      - name: Static preflight checks
+        working-directory: FairyOS/android
+        run: |
+          bash scripts/preflight_static_check.sh .
+
+      - name: Compile debug Kotlin
+        working-directory: FairyOS/android
+        run: |
+          gradle :app:compileDebugKotlin --no-daemon --stacktrace
+
+      - name: Build debug APK
+        working-directory: FairyOS/android
+        run: |
+          gradle :app:assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FairyOS-SparkBaby-debug-apk
+          path: FairyOS/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
